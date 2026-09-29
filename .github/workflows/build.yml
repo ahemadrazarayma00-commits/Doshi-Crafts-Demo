@@ -29,10 +29,11 @@ jobs:
 
             if (( ${#zips[@]} == 0 )); then
               echo "ERROR: No Android project or ZIP found."
-              find . -maxdepth 4 -type f | sort | head -300
+              find . -maxdepth 5 -type f | sort | head -400
               exit 1
             fi
 
+            rm -rf .android-project
             mkdir -p .android-project
             unzip -q -o "${zips[0]}" -d .android-project
           fi
@@ -40,8 +41,8 @@ jobs:
           PROJECT_DIR="$(find . -type f -name settings.gradle.kts -print -quit | xargs -r dirname)"
 
           if [[ -z "${PROJECT_DIR}" ]]; then
-            echo "ERROR: settings.gradle.kts was not found."
-            find . -maxdepth 6 -type f | sort | head -400
+            echo "ERROR: settings.gradle.kts not found."
+            find . -maxdepth 7 -type f | sort | head -500
             exit 1
           fi
 
@@ -60,13 +61,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [[ ! -x "${SDKMANAGER}" ]]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+
+          if [[ -z "${SDKMANAGER}" || ! -x "${SDKMANAGER}" ]]; then
+            echo "ERROR: sdkmanager not found."
+            find "${ANDROID_HOME}" -maxdepth 4 -type f -name sdkmanager -print
+            exit 1
+          fi
+
+          echo "Using sdkmanager: ${SDKMANAGER}"
+
+          yes | "${SDKMANAGER}" --licenses >/dev/null 2>&1 || true
+
+          "${SDKMANAGER}" "platform-tools"
+          "${SDKMANAGER}" "platforms;android-35"
+          "${SDKMANAGER}" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -97,10 +115,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           APK="${PROJECT_DIR}/app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
-          echo "APK created: $APK"
-          ls -lh "$APK"
+
+          if [[ ! -f "${APK}" ]]; then
+            echo "ERROR: APK was not created."
+            find "${PROJECT_DIR}/app/build/outputs" \
+              -type f -maxdepth 6 -print 2>/dev/null || true
+            exit 1
+          fi
+
+          ls -lh "${APK}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
